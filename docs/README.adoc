@@ -1,0 +1,114 @@
+= HiTorro Streams — NATS
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+
+NATS publisher sink for `Sink<JsonNode>` pipelines. Wraps
+`io.nats.client.Nats` so any streams-based pipeline can land rows on
+a NATS subject without adopting a larger framework.
+
+Related:
+xref:../../hitorro-streams/docs/README.adoc[Streams / Sinks] ·
+xref:../../hitorro-streams-kafka/docs/README.adoc[Streams / Kafka] ·
+xref:../../hitorro-mesh-pipelines/docs/pipeline-framework.adoc[Pipelines]
+
+== The class
+
+`com.hitorro.util.core.iterator.sinks.nats.NatsSink`
+
+[source,java]
+----
+public NatsSink(String servers, String subject)
+----
+
+* `servers` — NATS URL (`nats://host:port`); defaults to
+  `nats://localhost:4222` when null
+* `subject` — target subject to publish to
+
+Each row is serialized to JSON bytes and published fire-and-forget.
+A `flush(2s)` runs per row so tests with small volumes see messages
+arrive immediately at subscribers; high-throughput jobs can rely on
+jnats's own batching plus the `close()`-time flush.
+
+== Standalone use
+
+[source,java]
+----
+import com.hitorro.util.core.iterator.sinks.nats.NatsSink;
+
+try (var sink = new NatsSink("nats://localhost:4222", "user.events")) {
+    sink.start();
+    for (JsonNode event : incoming) {
+        sink.add(event);
+    }
+    System.out.println("published " + sink.count() + " to " + sink.subject());
+}
+----
+
+== Spring Boot integration
+
+[source,java]
+----
+@Configuration
+public class NatsSinkConfig {
+
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty("app.nats.enabled")
+    public Sink<JsonNode> natsEventSink(
+            @Value("${app.nats.servers:nats://localhost:4222}") String servers,
+            @Value("${app.nats.subject}") String subject) throws IOException {
+        var sink = new NatsSink(servers, subject);
+        sink.start();
+        return sink;
+    }
+}
+
+@Service
+public class EventPublisher {
+    private final Sink<JsonNode> nats;
+    public EventPublisher(Sink<JsonNode> nats) { this.nats = nats; }
+    public void publish(JsonNode e) throws Exception { nats.add(e); }
+}
+----
+
+== Mesh pipeline usage (YAML config)
+
+[source,yaml]
+----
+sinks:
+  - kind: nats
+    servers: "nats://localhost:4222"
+    subject: user.events
+----
+
+Wired via `hitorro-mesh-pipelines`'s built-in `SinkRegistry`
+`createNats` — no separate adapter jar needed. NATS is an optional
+dep, so calling `kind: nats` without jnats on the classpath fails
+with a clear error message.
+
+== Streaming compute graphs across processes
+
+Combine `NatsSink` + `NatsSource` (from mesh-pipelines) to build a
+multi-process compute graph without a shared file store:
+
+....
+Process A                              Process B
+─────────                              ─────────
+NDJson source                          NatsSource
+     │                                      │
+   filter                                 project
+     │                                      │
+   NatsSink ─── nats://events ──▶       LuceneSink
+....
+
+Each process runs independently; NATS carries the rows between them.
+Great for horizontally scaling stateless enrichment where the
+overhead of the mesh coordinator is more than you need.
+
+== Where to read more
+
+* Source: `hitorro-streams-nats/src/main/java/`
+* xref:../../hitorro-streams/docs/README.adoc[Streams / Sinks] — the base `Sink<T>` contract
+* xref:../../hitorro-mesh-pipelines/docs/pipeline-framework.adoc[Pipelines] — YAML config surface
+* NATS Java client https://github.com/nats-io/nats.java[docs]
