@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Hitorro Streams Nats logo" width="180">
+</p>
+
 # hitorro-streams-nats
 
 NATS JetStream source (`Iterator<JVS>` / `Iterator<Message>`) and sink
