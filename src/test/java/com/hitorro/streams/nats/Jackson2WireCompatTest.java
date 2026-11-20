@@ -57,17 +57,13 @@ class Jackson2WireCompatTest {
    * <li>java.time and Optional are built into Jackson 3. A row holding them in a POJO node could not
    * be sent by 3.x (IOException); it is now sent, the Instant as decimal epoch seconds (what Jackson 2
    * wrote with JavaTimeModule). Same decision as hitorro-util {@code Http}.</li>
-   * <li>Jackson 3's default maximum nesting depth is 500 (Jackson 2.18: 1000), and hitorro-core's
-   * {@code JsonMappers} keeps it, so a value nested 600 deep is now skipped. If core raises the limit
-   * to 1000 this entry fails and should be removed.</li>
    * </ul>
    */
   static final Map<String, String> ACCEPTED = Map.of(
       "NatsJetStreamSink.built.pojo.instant", "{\"p\":1700000000.123000000}",
       "util.NatsSink.built.pojo.instant", "{\"p\":1700000000.123000000}",
       "NatsJetStreamSink.built.pojo.optional", "{\"p\":\"v\"}",
-      "util.NatsSink.built.pojo.optional", "{\"p\":\"v\"}",
-      "NatsJetStreamSource.in28", "skip");
+      "util.NatsSink.built.pojo.optional", "{\"p\":\"v\"}");
   // ---- shared by the Jackson 2 generator and the Jackson 3 test (tools.jackson = jackson package) ----
   public record Rec(int b, String a, java.util.Date d, java.util.List<String> l) {}
   public static final class Bean { private int z = 1; private String y = "y"; public int getZ() { return z; } public String getY() { return y; } }
