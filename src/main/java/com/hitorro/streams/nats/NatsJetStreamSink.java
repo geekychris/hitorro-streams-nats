@@ -3,8 +3,10 @@
  */
 package com.hitorro.streams.nats;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import com.hitorro.util.json.JsonMappers;
 import com.hitorro.util.core.iterator.sinks.Sink;
 import com.hitorro.util.io.StoreException;
 import io.nats.client.Connection;
@@ -37,7 +39,7 @@ import java.util.function.Function;
  */
 public final class NatsJetStreamSink implements Sink<JsonNode> {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonMappers.json();
 
     private final Connection conn;
     private final JetStream js;
@@ -63,7 +65,7 @@ public final class NatsJetStreamSink implements Sink<JsonNode> {
     @Override public boolean add(JsonNode row) throws IOException, StoreException {
         try {
             String subj = subjectExtractor.apply(row);
-            byte[] payload = MAPPER.writeValueAsBytes(row);
+            byte[] payload = encode(row);
             if (async) {
                 inFlight.add(js.publishAsync(subj, payload));
             } else {
@@ -72,6 +74,18 @@ public final class NatsJetStreamSink implements Sink<JsonNode> {
             return true;
         } catch (Exception e) {
             throw new IOException("NatsJetStreamSink.add failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Encodes one row as the message body (the wire format: compact UTF-8 JSON). A row Jackson
+     * cannot write is an {@link IOException}, as it was on Jackson 2.
+     */
+    static byte[] encode(JsonNode row) throws IOException {
+        try {
+            return MAPPER.writeValueAsBytes(row);
+        } catch (JacksonException e) {
+            throw new IOException(e.getMessage(), e);
         }
     }
 

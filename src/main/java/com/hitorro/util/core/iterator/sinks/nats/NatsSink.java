@@ -3,8 +3,10 @@
  */
 package com.hitorro.util.core.iterator.sinks.nats;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import com.hitorro.util.json.JsonMappers;
 import com.hitorro.util.core.iterator.sinks.JsonNodeSinkBase;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
@@ -23,7 +25,7 @@ import java.time.Duration;
  */
 public final class NatsSink extends JsonNodeSinkBase {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMappers.json();
 
     private final String servers;
     private final String subject;
@@ -51,12 +53,24 @@ public final class NatsSink extends JsonNodeSinkBase {
     @Override
     protected void writeRow(JsonNode row) throws IOException {
         if (conn == null) start();
-        conn.publish(subject, JSON.writeValueAsBytes(row));
+        conn.publish(subject, encode(row));
         // Flush per message so tests using small volumes see them arrive
         // immediately at subscribers. High-throughput jobs can rely on
         // jnats's own batching plus close()-time flush.
         try { conn.flush(Duration.ofSeconds(2)); }
         catch (Exception e) { throw new IOException("NatsSink flush failed", e); }
+    }
+
+    /**
+     * Encodes one row as the message body (the wire format: compact UTF-8 JSON). A row Jackson
+     * cannot write is an {@link IOException}, as it was on Jackson 2.
+     */
+    static byte[] encode(JsonNode row) throws IOException {
+        try {
+            return JSON.writeValueAsBytes(row);
+        } catch (JacksonException e) {
+            throw new IOException(e.getMessage(), e);
+        }
     }
 
     @Override
