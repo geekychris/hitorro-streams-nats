@@ -3,8 +3,9 @@
  */
 package com.hitorro.streams.nats;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import com.hitorro.util.json.JsonMappers;
 import com.hitorro.jsontypesystem.JVS;
 import io.nats.client.Connection;
 import io.nats.client.JetStream;
@@ -49,7 +50,7 @@ import java.util.NoSuchElementException;
  */
 public final class NatsJetStreamSource implements AutoCloseable {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonMappers.json();
 
     private final Connection conn;
     private final JetStreamSubscription sub;
@@ -109,9 +110,13 @@ public final class NatsJetStreamSource implements AutoCloseable {
             @Override public boolean hasNext() {
                 while (next == null && raw.hasNext()) {
                     Message m = raw.next();
+                    JVS doc = decode(m.getData());
+                    if (doc == null) {
+                        try { m.nak(); } catch (Exception ignored) {}
+                        continue;
+                    }
                     try {
-                        JsonNode node = MAPPER.readTree(m.getData());
-                        next = new JVS(node);
+                        next = doc;
                         m.ack();
                     } catch (Exception e) {
                         try { m.nak(); } catch (Exception ignored) {}
@@ -127,6 +132,20 @@ public final class NatsJetStreamSource implements AutoCloseable {
     }
 
     /** Unblock any in-flight fetch and close the underlying connection. Idempotent. */
+    /**
+     * Decodes one message body (the wire format: JSON, parsed with Jackson 2 defaults, so trailing
+     * content after the first value is ignored). Returns {@code null} for a body that cannot be
+     * parsed; {@link #asJvsIterator()} naks and skips those.
+     */
+    static JVS decode(byte[] body) {
+        try {
+            JsonNode node = MAPPER.readTree(body);
+            return new JVS(node);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @Override public void close() {
         if (closed) return;
         closed = true;
